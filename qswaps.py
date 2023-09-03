@@ -5,7 +5,7 @@
 #
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict
 from pysat.formula import IDPool
 from pysat.solvers import Cadical153
 
@@ -24,7 +24,18 @@ class RawProblem:
     swap_time: int
 
 
-def solve(raw_problem: RawProblem):
+@dataclass
+class Operation:
+    time :int
+    gate :Optional[int]
+    edge :Tuple[str,str]
+
+@dataclass
+class Solution:
+    bit_assignment :Dict[str, str]
+    operations :List[Operation]
+
+def solve(raw_problem: RawProblem) -> Solution:
     vpool = IDPool()
     solver = Cadical153()
 
@@ -215,6 +226,9 @@ def solve(raw_problem: RawProblem):
 
     add_state()  # Need at least one state for the assumptions to be non-trivially satisfied
 
+    # solver.add_clause([vpool.id("t4_g2!")])
+    # solver.add_clause([vpool.id("t4_g3!")])
+
     while True:
         print(f"solving with {n_states} states...")
 
@@ -237,11 +251,18 @@ def solve(raw_problem: RawProblem):
         if status:
             model = set(solver.get_model())
 
-            # for i, v in vpool.id2obj.items():
-            #     print("var ", i, ". ", v,"=", i in model)
-            #     assert i in model or -i in model
+            for i, v in vpool.id2obj.items():
+                print("var ", i, ". ", v,"=", i in model)
+                assert i in model or -i in model
             # print(model)
 
+            operations = []
+            bit_assignment = {}
+
+            for lb in logical_bits:
+                for pb in physical_bits:
+                    if vpool.id(f"t{0}_{lb}@{pb}") in model:
+                        bit_assignment[pb] = lb
 
             for t in range(0,n_states):
                 print(f"@t={t}")
@@ -250,44 +271,18 @@ def solve(raw_problem: RawProblem):
                         for e in raw_problem.topology:
                             if vpool.id(f"t{t}_g{gate_idx}@({e[0]},{e[1]})!") in model:
                                 print(f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})")
+                                operations.append(Operation(t, gate_idx, e))
+
 
                 for e in raw_problem.topology:
                     if vpool.id(f"t{t}_sw({e[0]},{e[1]})") in model:
+                        operations.append(Operation(t,None,e))
                         print(f"  swap ({e[0]},{e[1]})")
             print("SAT")
-            break
+            return Solution(bit_assignment, operations)
         else:
             if n_states >= 100:
                 raise Exception("UNSAT")
             else:
                 add_state()
 
-
-if __name__ == "__main__":
-
-    
-
-    example1 = RawProblem(
-        gates=[RawGate("l1", "l2", 1), RawGate("l3", "l4", 1), RawGate("l1", "l3", 1), RawGate("l2", "l4", 1)],
-        topology=[("p1", "p2"), ("p2", "p3"), ("p3","p4")],
-        swap_time=3,
-    )
-
-    example2 = "1-(2,4)-3, 2-(3,1)-3, 3-(3,4)-3, 4-(2,1)-3, 5-(2,4)-3, 6-(1,3)-3, 7-(3,2)-3, 8-(4,1)-3"
-    print([parts for g in example2.split(", ") for parts in g.split("-")])
-    
-    example2 = RawProblem(
-        gates=[
-            RawGate(
-                line1="l" + g.split("-")[1][1:].split(",")[0],
-                line2="l" + g.split("-")[1][:-1].split(",")[1],
-                duration=1,
-            )
-            for g in example2.split(", ")
-        ],
-        topology=[("p1", "p2"), ("p2", "p3"), ("p3","p4")],
-        swap_time=3
-    )
-
-    print(example2)
-    solve(example2)
