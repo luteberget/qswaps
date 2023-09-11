@@ -224,7 +224,8 @@ def solve(raw_problem: RawProblem) -> Solution:
 
         n_states += 1
 
-    add_state()  # Need at least one state for the assumptions to be non-trivially satisfied
+    for _ in range(40):
+        add_state()  # Need at least one state for the assumptions to be non-trivially satisfied
 
     # solver.add_clause([vpool.id("t4_g2!")])
     # solver.add_clause([vpool.id("t4_g3!")])

@@ -1,2 +1,5 @@
 python-sat
 qiskit
+qiskit_experiments
+qiskit-aer
+networkx

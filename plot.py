@@ -1,5 +1,8 @@
+from qiskit.circuit import Gate
 from qswaps import RawProblem, Solution
 from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister
+from qiskit.quantum_info.operators import Operator, Pauli
+from qiskit.visualization import circuit_drawer
 
 def plot_solution(problem :RawProblem, solution :Solution):
     #
@@ -17,8 +20,10 @@ def plot_solution(problem :RawProblem, solution :Solution):
 
     for op in solution.operations:
         if op.gate is not None:
-            circuit.cx(*[node_to_q[n] for n in op.edge], label=f"g{op.gate+1}")
+            circuit.append(Gate(name=f"g{op.gate+1}", num_qubits=2, params=[]), [node_to_q[n] for n in op.edge])
         else:
             circuit.swap(*[node_to_q[n] for n in op.edge])
-    print(circuit)
+
+    txt = circuit_drawer(circuit, vertical_compression="low", idle_wires=True)
+    print(txt)
 
