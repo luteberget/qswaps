@@ -26,16 +26,18 @@ class RawProblem:
 
 @dataclass
 class Operation:
-    time :int
-    gate :Optional[int]
-    edge :Tuple[str,str]
+    time: int
+    gate: Optional[int]
+    edge: Tuple[str, str]
+
 
 @dataclass
 class Solution:
-    bit_assignment :Dict[str, str]
-    operations :List[Operation]
+    bit_assignment: Dict[str, str]
+    operations: List[Operation]
 
-def solve(raw_problem: RawProblem) -> Solution:
+
+def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
     vpool = IDPool()
     solver = Cadical153()
 
@@ -46,6 +48,9 @@ def solve(raw_problem: RawProblem) -> Solution:
 
     logical_bits = set(bit for g in raw_problem.gates for bit in [g.line1, g.line2])
     physical_bits = set(bit for a, b in raw_problem.topology for bit in [a, b])
+
+    assert gate_execution_time >= 0
+    assert gate_execution_time <= 1
 
     assert len(logical_bits) == len(physical_bits)
 
@@ -74,6 +79,31 @@ def solve(raw_problem: RawProblem) -> Solution:
 
             # Constraint: each pb hosts at most one lb
             pairwise_atmostone(solver, vars)
+
+        # Symmetry breaking for linear topology
+        if t == 0:
+            lb = next(iter(logical_bits))
+            pb_edge = [bit for a, b in raw_problem.topology for bit in [a, b]]
+            print(pb_edge)
+            extreme_pb = next(
+                pb
+                for pb in physical_bits
+                if len([True for b in pb_edge if pb == b]) == 1
+            )
+            half_of_pbs = set([extreme_pb])
+
+            while len(half_of_pbs) < len(physical_bits) / 2:
+                half_of_pbs.update(
+                    [
+                        b
+                        for x, y in raw_problem.topology
+                        for a, b in [(x, y), (y, x)]
+                        if a in half_of_pbs
+                    ]
+                )
+
+            for pb in half_of_pbs:
+                solver.add_clause([-vpool.id(f"t0_{lb}@{pb}")])
 
         #
         # ACTIONS
@@ -118,13 +148,15 @@ def solve(raw_problem: RawProblem) -> Solution:
                     # print("cannot execute", f"t{t}_g{gate_idx}!")
                     solver.add_clause([-execute])
                 else:
-                    solver.add_clause([-execute, vpool.id(f"t{t-1}_g{pred}")])
+                    solver.add_clause(
+                        [-execute, vpool.id(f"t{t-gate_execution_time}_g{pred}")]
+                    )
 
             locations = []
 
             for edge in raw_problem.topology:
                 # either:
-                #  - gate.line1 maps to edge[0] and gate.line2 maps to edge[1] 
+                #  - gate.line1 maps to edge[0] and gate.line2 maps to edge[1]
                 #  - or the other way around
                 # it doesn't matter, because we can just flip it around to match.
                 # The names of the bits are anyway tracking the correct information flow,
@@ -136,7 +168,11 @@ def solve(raw_problem: RawProblem) -> Solution:
                 # At the current time, the logical inputs to the gate must be mapped
                 # to the physical bits.
                 for lb in [gate.line1, gate.line2]:
-                    cl = [-execute_at, vpool.id(f"t{t}_{lb}@{edge[0]}"), vpool.id(f"t{t}_{lb}@{edge[1]}")]
+                    cl = [
+                        -execute_at,
+                        vpool.id(f"t{t}_{lb}@{edge[0]}"),
+                        vpool.id(f"t{t}_{lb}@{edge[1]}"),
+                    ]
                     solver.add_clause(cl)
 
             # If executing the gate, it has to be executed at one of the possible physical locations
@@ -201,17 +237,31 @@ def solve(raw_problem: RawProblem) -> Solution:
 
                 this_swap = vpool.id(f"t{swap_start}_sw({this_edge[0]},{this_edge[1]})")
 
+                # cant undo a swap
+                if swap_start >= 1:
+                    solver.add_clause(
+                        [
+                            -this_swap,
+                            -vpool.id(
+                                f"t{swap_start-1}_sw({this_edge[0]},{this_edge[1]})"
+                            ),
+                        ]
+                    )
+
                 for other_time in range(swap_start, t):
                     for other_edge in adjacent_edges + [this_edge]:
                         #
                         # Gate incompatibility
 
-                        for gate_idx, _gate in enumerate(raw_problem.gates):
-                            other_gate = vpool.id(
-                                f"t{other_time}_g{gate_idx}@({other_edge[0]},{other_edge[1]})!"
-                            )
+                        if gate_execution_time == 1:
+                            for gate_idx, _gate in enumerate(raw_problem.gates):
+                                other_gate = vpool.id(
+                                    f"t{other_time}_g{gate_idx}@({other_edge[0]},{other_edge[1]})!"
+                                )
 
-                            solver.add_clause([-this_swap, -other_gate])
+                                solver.add_clause([-this_swap, -other_gate])
+
+                        assert gate_execution_time <= 1
 
                         #
                         # Swap incompatibility
@@ -224,8 +274,7 @@ def solve(raw_problem: RawProblem) -> Solution:
 
         n_states += 1
 
-    for _ in range(40):
-        add_state()  # Need at least one state for the assumptions to be non-trivially satisfied
+    add_state()  # Need at least one state for the assumptions to be non-trivially satisfied
 
     # solver.add_clause([vpool.id("t4_g2!")])
     # solver.add_clause([vpool.id("t4_g3!")])
@@ -245,7 +294,6 @@ def solve(raw_problem: RawProblem) -> Solution:
         # print(solver.accum_stats())
         # print("assumptions", all_gates_executed)
 
-
         status = solver.solve([vpool.id(v) for v in all_gates_executed])
         # print(f"done status={status}")
 
@@ -253,7 +301,7 @@ def solve(raw_problem: RawProblem) -> Solution:
             model = set(solver.get_model())
 
             for i, v in vpool.id2obj.items():
-                print("var ", i, ". ", v,"=", i in model)
+                print("var ", i, ". ", v, "=", i in model)
                 assert i in model or -i in model
             # print(model)
 
@@ -265,19 +313,20 @@ def solve(raw_problem: RawProblem) -> Solution:
                     if vpool.id(f"t{0}_{lb}@{pb}") in model:
                         bit_assignment[pb] = lb
 
-            for t in range(0,n_states):
+            for t in range(0, n_states):
                 print(f"@t={t}")
-                for gate_idx,gate in enumerate(raw_problem.gates):
+                for gate_idx, gate in enumerate(raw_problem.gates):
                     if vpool.id(f"t{t}_g{gate_idx}!") in model:
                         for e in raw_problem.topology:
                             if vpool.id(f"t{t}_g{gate_idx}@({e[0]},{e[1]})!") in model:
-                                print(f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})")
+                                print(
+                                    f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})"
+                                )
                                 operations.append(Operation(t, gate_idx, e))
-
 
                 for e in raw_problem.topology:
                     if vpool.id(f"t{t}_sw({e[0]},{e[1]})") in model:
-                        operations.append(Operation(t,None,e))
+                        operations.append(Operation(t, None, e))
                         print(f"  swap ({e[0]},{e[1]})")
             print("SAT")
             return Solution(bit_assignment, operations)
@@ -286,4 +335,3 @@ def solve(raw_problem: RawProblem) -> Solution:
                 raise Exception("UNSAT")
             else:
                 add_state()
-
