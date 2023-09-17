@@ -33,16 +33,18 @@ example2 = RawProblem(
 
 results = {}
 
-for size in [6,7,8,9,10]:
-    for swaptime in [1]:
+for size in [4]:
+    for swaptime in [3]:
         results[(size,swaptime)] = []
-        for i,instance in enumerate(gen_instances(size)):
+        for i,instance in enumerate(gen_instances(size, seed=420)):
 
             problem = RawProblem(
                 [RawGate(f"l{j.pair[0]}", f"l{j.pair[1]}", 1) for j in instance.jobs],
                 [(f"p{a}", f"p{b}") for a, b in instance.hardware_graph.edges],
                 swaptime,
             )
+
+            print("PROBLEM", problem)
 
             print("solving...")
             t0 = time.time()
@@ -51,6 +53,7 @@ for size in [6,7,8,9,10]:
             plot_solution(problem, solution)
             print(f"solved size{size} swaptime{swaptime} in {(t1-t0):0.2f}")
             results[(size,swaptime)].append(t1-t0)
+            break
 
 print(results)
 
