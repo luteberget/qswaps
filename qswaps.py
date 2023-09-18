@@ -49,6 +49,8 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
     logical_bits = set(bit for g in raw_problem.gates for bit in [g.line1, g.line2])
     physical_bits = set(bit for a, b in raw_problem.topology for bit in [a, b])
 
+    # assert gate_execution_time == 1
+    # assert raw_problem.swap_time == 3
     assert gate_execution_time >= 0
     assert gate_execution_time <= 1
 
@@ -92,7 +94,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
             )
             half_of_pbs = set([extreme_pb])
 
-            while len(half_of_pbs) < len(physical_bits) / 2:
+            while len(half_of_pbs) < len(physical_bits) // 2:
                 half_of_pbs.update(
                     [
                         b
@@ -324,12 +326,13 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
                                 )
                                 operations.append(Operation(t, gate_idx, e))
 
-                for e in raw_problem.topology:
-                    if vpool.id(f"t{t}_sw({e[0]},{e[1]})") in model:
-                        operations.append(Operation(t, None, e))
-                        print(f"  swap ({e[0]},{e[1]})")
+                if (n_states-t) >= raw_problem.swap_time:
+                    for e in raw_problem.topology:
+                        if vpool.id(f"t{t}_sw({e[0]},{e[1]})") in model:
+                            operations.append(Operation(t, None, e))
+                            print(f"  swap ({e[0]},{e[1]})")
             print("SAT")
-            return Solution(bit_assignment, operations)
+            return n_states, Solution(bit_assignment, operations)
         else:
             if n_states >= 100:
                 raise Exception("UNSAT")

@@ -66,7 +66,7 @@ def gen_instances(num_qubits, seed=123):
     qubits = tuple(range(num_qubits)) 
     c_map,hardware_graph=linear_coupling(num_qubits)
 
-    qv_exp = QuantumVolume(qubits, seed,trials=5)
+    qv_exp = QuantumVolume(qubits, seed,trials=15)
     qv_circuits=qv_exp.circuits()
     qiskit_circuits_3=[]
     qiskit_circuits_0=[]
