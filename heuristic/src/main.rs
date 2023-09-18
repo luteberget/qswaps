@@ -21,12 +21,13 @@ pub struct Solution {
     pub gates: Vec<Gate>,
     pub depth: u16,
     pub n_swaps: u16,
+    pub cost: f32,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Gate {
     InputGate(u8),
-    SwapGate(u8, u8),
+    Swap(u8, u8),
 }
 
 pub struct BeamSearchParams {
@@ -266,6 +267,7 @@ pub fn solve_heur_beam_full(problem: &Problem, params: &BeamSearchParams) -> Opt
     });
 
     best.map(|node| {
+        let cost = node.f_cost.0;
         let depth = *node.state.time.iter().max().unwrap();
         let n_swaps = node.n_swaps;
         let mut node = &node;
@@ -282,6 +284,7 @@ pub fn solve_heur_beam_full(problem: &Problem, params: &BeamSearchParams) -> Opt
             n_swaps,
             gates,
             input_bits,
+            cost,
         }
     })
 }
@@ -319,8 +322,8 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
             let mut micro_iter = 0;
             let mut next_micro_layer: MinMaxHeap<Rc<Node>> = Default::default();
 
-            while micro_iter < swap_depth.min(params.width) {
-                println!("  micro beam {}", micro_iter);
+            while micro_iter < swap_depth {
+                println!("  MICRO ITER {}", micro_iter);
                 assert!(next_micro_layer.is_empty());
 
                 for node in this_layer.iter() {
@@ -329,19 +332,38 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                         problem,
                         node.state.placed_gates,
                     );
-                    let is_micro_terminal = gate_layers.iter().take_while(|x| **x != -1).any(|g| {
-                        gate_dist_cost(problem, *g as u8, &node.state.bits, &dist_map) == 0
-                    });
+
+                    let mut gate_dists = gate_layers
+                        .iter()
+                        .take_while(|x| **x != -1)
+                        .map(|g| gate_dist_cost(problem, *g as u8, &node.state.bits, &dist_map));
+
+                    let gate_dists = gate_dists.collect::<Vec<_>>();
+                    let mut gate_dists_iter = gate_dists.iter().copied();
+
+                    let is_micro_terminal = gate_dists_iter.any(|d| d == 0);
+
+                    println!(
+                        "    NODE swap {} {:?}\n    topo {:?}",
+                        if is_micro_terminal { "TERM" } else { "INT " },
+                        node.state,
+                        gate_layers
+                    );
+                    println!("    Gate dists: {:?}", gate_dists);
 
                     if is_micro_terminal {
                         // add macro node
-                        if node.f_cost
-                            < next_macro_layer
+                        if next_macro_layer.len() < params.width
+                            || next_macro_layer
                                 .peek_max()
                                 .map(|n| n.f_cost)
                                 .unwrap_or(OrderedFloat(f32::INFINITY))
+                                > node.f_cost
                         {
-                            println!("  micro terminal cost {}", node.f_cost);
+                            println!(
+                                "   ADDING MACRO NODE {} pl={} fw={:?}",
+                                node.f_cost, node.state.placed_gates, node.state.bits.forward
+                            );
                             next_macro_layer.push(node.clone());
 
                             if next_macro_layer.len() > params.width {
@@ -349,11 +371,6 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                             }
                         }
                     }
-
-                    println!(
-                        "  swap term={} {:?}\n    topo {:?}",
-                        is_micro_terminal, node.state, gate_layers
-                    );
 
                     for (pb1, pb2) in problem.topology.iter().copied() {
                         let mut new_state = node.state.clone();
@@ -366,6 +383,7 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                         new_state.time[pb1 as usize] = finish_time;
                         new_state.time[pb2 as usize] = finish_time;
 
+                        new_state.bits.swap_physical(pb1 as usize, pb2 as usize);
                         let n_swaps = node.n_swaps + if use_swap_cost { 1 } else { 0 };
 
                         let new_cost = OrderedFloat(get_cost(
@@ -394,25 +412,44 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                             .or_insert(f32::INFINITY);
 
                         if *existing_cost <= node.f_cost.0 {
+                            println!(
+                                "   pruning pl={} fw={:?}",
+                                new_state.placed_gates, new_state.bits.forward
+                            );
                             continue;
+                        } else {
+                            *existing_cost = node.f_cost.0;
                         }
 
-                        println!("    New micrlayer {} best micro {} best macro {}", new_cost, next_micro_layer
-                        .peek_min()
-                        .map(|x| x.f_cost)
-                        .unwrap_or(f32::INFINITY.into()),next_macro_layer
-                        .peek_min()
-                        .map(|x| x.f_cost)
-                        .unwrap_or(f32::INFINITY.into()));
+                        println!(
+                            "    adding microlayer node {:?} {} best micro {} best macro {}",
+                            Gate::Swap(pb1, pb2),
+                            new_cost,
+                            next_micro_layer
+                                .peek_min()
+                                .map(|x| x.f_cost)
+                                .unwrap_or(f32::INFINITY.into()),
+                            next_macro_layer
+                                .peek_min()
+                                .map(|x| x.f_cost)
+                                .unwrap_or(f32::INFINITY.into())
+                        );
 
                         if new_cost
                             < next_macro_layer
                                 .peek_min()
                                 .map(|x| x.f_cost)
-                                .unwrap_or(f32::INFINITY.into())
+                                .unwrap_or(f32::NEG_INFINITY.into())
+                                // Compare to negative infinity because we don't want to 
+                                // keep going forever if no macro states are found.
+                                // (though this hopefully doesn't happen)
                             && 2 * micro_iter > swap_depth
                         {
-                            println!(" * placing {}: Increasing swap_depth to {}", n_gates_placed, 2 * micro_iter);
+                            println!(
+                                " * placing {}: Increasing swap_depth to {}",
+                                n_gates_placed,
+                                2 * micro_iter
+                            );
                             swap_depth = swap_depth.max(2 * micro_iter);
                         }
 
@@ -421,7 +458,7 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                             n_swaps,
                             state: new_state,
                             parent: if use_swap_cost {
-                                Some((node.clone(), Gate::SwapGate(pb1, pb2)))
+                                Some((node.clone(), Gate::Swap(pb1, pb2)))
                             } else {
                                 None // No need to remember the parent, we're just modifying the initial bits.},
                             },
@@ -430,14 +467,19 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                         next_micro_layer.push(new_node);
 
                         if next_micro_layer.len() > params.width {
-                            let prev_max = next_micro_layer.pop_max().unwrap();
-                            let map = best_state_scores
-                                .get_mut(&prev_max.state.placed_gates)
-                                .unwrap();
+                            let _prev_max = next_micro_layer.pop_max().unwrap();
 
-                            if map[&prev_max.state.bits.forward] == prev_max.f_cost.0 {
-                                map.remove(&prev_max.state.bits.forward);
-                            }
+                            // It is unnecessary to remove from best_state_scores.
+                            // If the node has been popped from the next micro layer heap, then
+                            // we can still safely prune similar states.
+
+                            // let map = best_state_scores
+                            //     .get_mut(&prev_max.state.placed_gates)
+                            //     .unwrap();
+
+                            // if map[&prev_max.state.bits.forward] == prev_max.f_cost.0 {
+                            //     map.remove(&prev_max.state.bits.forward);
+                            // }
                         }
                     }
                 }
@@ -452,9 +494,10 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
         assert!(!this_layer.is_empty());
         assert!(next_macro_layer.is_empty());
 
-        println!("Macro beam");
+        println!("MACRO BEAM");
 
         for node in this_layer.iter() {
+            println!("  GATENODE {:?}", node.state);
             // Get the layers definition for this node
             let gate_layers =
                 cached_toposort_layers(&mut toposort_cache, problem, node.state.placed_gates);
@@ -489,6 +532,11 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                     &dist_map,
                 );
 
+                println!(
+                    "    placing gate {} cost {} \n     state {:?}",
+                    place_gate, new_cost, new_state
+                );
+
                 let new_node = Node {
                     f_cost: OrderedFloat(new_cost),
                     n_swaps: node.n_swaps,
@@ -503,11 +551,12 @@ pub fn solve_heur_beam(problem: &Problem, params: &BeamSearchParams, mut f: impl
                     // We don't need to check best_cost_states here
                     // because they will all be unique.
 
-                    if new_node.f_cost
-                        < next_macro_layer
+                    if next_macro_layer.len() < params.width
+                        || next_macro_layer
                             .peek_max()
                             .map(|n| n.f_cost)
                             .unwrap_or(OrderedFloat(f32::INFINITY))
+                            > new_node.f_cost
                     {
                         next_macro_layer.push(Rc::new(new_node));
                         if next_macro_layer.len() > params.width {
@@ -527,11 +576,11 @@ fn initial_permutations(
     problem: &Problem,
     dist_map: &Vec<Vec<u8>>,
 ) -> Vec<Rc<Node>> {
-    let mut rng = thread_rng();
+    let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(2);
 
     // Generate random starting permutations
     let mut initial_permutations: Vec<Rc<Node>> = Vec::with_capacity(params.width);
-    let initial_gate_layers = toposort_layers(problem, 0);
+    let mut topocache = Default::default();
 
     for _ in 0..params.width {
         let mut bits_forward: SmallVec<[u8; 16]> = (0..(problem.n_logical_bits as u8)).collect();
@@ -547,22 +596,25 @@ fn initial_permutations(
             backward: bits_backward,
         };
 
-        let h_cost = OrderedFloat(state_dist_cost(
+        let state = State {
+            time: (0..problem.n_logical_bits).map(|_| 0).collect(),
+            bits,
+            placed_gates: 0,
+        };
+
+        let cost = OrderedFloat(get_cost(
             problem,
-            &bits,
-            &initial_gate_layers,
+            params,
+            &state,
+            0,
+            &mut topocache,
             dist_map,
-            params.layer_discount,
         ));
 
         initial_permutations.push(Rc::new(Node {
-            f_cost: h_cost,
+            f_cost: cost,
             n_swaps: 0,
-            state: State {
-                time: (0..problem.n_logical_bits).map(|_| 0).collect(),
-                bits,
-                placed_gates: 0,
-            },
+            state,
             parent: None,
         }));
     }
@@ -677,23 +729,23 @@ mod tests {
         };
 
         let solution = solve_heur_beam_full(&problem, &params).unwrap();
-        assert!(solution.n_swaps == 0 && solution.depth == 1*problem.gate_dt);
+        assert!(solution.n_swaps == 0 && solution.depth == 1 * problem.gate_dt);
         println!("SOLUTION {:?}", solution);
     }
 
     #[test]
-    fn test_solve_medium() {
+    fn test_solve_medium1() {
         let problem = Problem {
             n_logical_bits: 4,
-            gates: vec![(1,2),(3,0),(3,1),(0,2)],
+            gates: vec![(1, 2), (3, 0), (3, 1), (0, 2)],
             n_physical_bits: 4,
-            topology: vec![(0,1),(1,2),(2,3)],
+            topology: vec![(0, 1), (1, 2), (2, 3)],
             swap_dt: 3,
             gate_dt: 1,
         };
 
         let params = BeamSearchParams {
-            width: 25,
+            width: 10,
             layer_discount: 0.5,
             depth_cost: 1.0,
             swap_cost: 0.1,
@@ -701,8 +753,65 @@ mod tests {
         };
 
         let solution = solve_heur_beam_full(&problem, &params).unwrap();
-        assert!(solution.n_swaps == 1 && solution.depth == 2*problem.gate_dt + problem.swap_dt);
         println!("SOLUTION {:?}", solution);
+        assert!(solution.n_swaps == 1 && solution.depth == 2 * problem.gate_dt + problem.swap_dt);
+    }
+
+    #[test]
+    fn test_solve_medium2() {
+        let problem = Problem {
+            n_logical_bits: 4,
+            gates: vec![(3, 2), (1, 0), (3, 1), (0, 2), (2, 3), (0, 1)],
+            n_physical_bits: 4,
+            topology: vec![(0, 1), (1, 2), (2, 3)],
+            swap_dt: 3,
+            gate_dt: 1,
+        };
+
+        let params = BeamSearchParams {
+            width: 10,
+            layer_discount: 0.5,
+            depth_cost: 1.0,
+            swap_cost: 0.1,
+            heuristic_cost_factor: 1.0,
+        };
+
+        let solution = solve_heur_beam_full(&problem, &params).unwrap();
+        println!("SOLUTION {:?}", solution);
+        assert!(solution.n_swaps == 2 && solution.depth == 4 * problem.gate_dt + problem.swap_dt);
+    }
+
+    #[test]
+    fn test_solve_large1() {
+        let problem = Problem {
+            n_logical_bits: 5,
+            gates: vec![
+                (2, 4),
+                (3, 4),
+                (1, 0),
+                (2, 1),
+                (1, 3),
+                (0, 2),
+                (2, 4),
+                (0, 1),
+            ],
+            n_physical_bits: 5,
+            topology: vec![(0, 1), (1, 2), (2, 3), (3, 4)],
+            swap_dt: 3,
+            gate_dt: 1,
+        };
+
+        let params = BeamSearchParams {
+            width: 10,
+            layer_discount: 0.5,
+            depth_cost: 1.0,
+            swap_cost: 0.1,
+            heuristic_cost_factor: 1.0,
+        };
+
+        let solution = solve_heur_beam_full(&problem, &params).unwrap();
+        println!("SOLUTION {:?}", solution);
+        assert!(solution.n_swaps == 4 && solution.depth == 10);
     }
 }
 
