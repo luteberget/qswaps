@@ -52,11 +52,13 @@ heur_results = {}
 # raise Exception()
 
 
-for size in [7]:
+for size in [4,5,6,7]:
     for swaptime in [3]:
         exact_results[(size, swaptime)] = []
         heur_results[(size, swaptime)] = []
-        for i, instance in enumerate(gen_instances(size, seed=420)):
+        for i, instance in enumerate(gen_instances(size, seed=420, num_instances=100)):
+            name = f"sz{size}_swt{swaptime}_{i}"
+            print(f"# INSTANCE {name}")
             problem = RawProblem(
                 [RawGate(f"l{j.pair[0]}", f"l{j.pair[1]}", 1) for j in instance.jobs],
                 [(f"p{a}", f"p{b}") for a, b in instance.hardware_graph.edges],

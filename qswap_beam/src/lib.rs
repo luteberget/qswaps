@@ -302,7 +302,7 @@ fn mk_dist_map(problem: &Problem) -> Vec<Vec<u8>> {
     for i in 0..problem.n_physical_bits {
         for j in 0..problem.n_physical_bits {
             if dist[i][j] > 0 {
-                dist[i][j] -= 1;
+                dist[i][j] = dist[i][j]-1;
             }
         }
     }
@@ -682,6 +682,8 @@ fn initial_permutations(
     // Generate random starting permutations
     let mut initial_permutations: Vec<Rc<Node>> = Vec::with_capacity(params.width);
     let mut topocache = Default::default();
+
+    println!("INITIAL TOPO {:?}", toposort_layers(problem, 0));
 
     for _ in 0..params.width {
         let mut bits_forward: SmallVec<[u8; 16]> = (0..(problem.n_logical_bits as u8)).collect();

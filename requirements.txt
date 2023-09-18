@@ -3,3 +3,4 @@ qiskit
 qiskit_experiments
 qiskit-aer
 networkx
+maturin

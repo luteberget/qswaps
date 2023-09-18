@@ -62,11 +62,11 @@ def linear_coupling(n):
     return CouplingMap.from_line(n),hardware_graph
 
 
-def gen_instances(num_qubits, seed=123):
+def gen_instances(num_qubits, seed=123, num_instances=5):
     qubits = tuple(range(num_qubits)) 
     c_map,hardware_graph=linear_coupling(num_qubits)
 
-    qv_exp = QuantumVolume(qubits, seed,trials=15)
+    qv_exp = QuantumVolume(qubits, seed=seed,trials=num_instances)
     qv_circuits=qv_exp.circuits()
     qiskit_circuits_3=[]
     qiskit_circuits_0=[]

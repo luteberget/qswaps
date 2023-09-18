@@ -302,9 +302,9 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
         if status:
             model = set(solver.get_model())
 
-            for i, v in vpool.id2obj.items():
-                print("var ", i, ". ", v, "=", i in model)
-                assert i in model or -i in model
+            # for i, v in vpool.id2obj.items():
+            #     print("var ", i, ". ", v, "=", i in model)
+            #     assert i in model or -i in model
             # print(model)
 
             operations = []
