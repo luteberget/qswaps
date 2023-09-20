@@ -56,9 +56,9 @@ for size in [4,5,6,7]:
     for swaptime in [3]:
         exact_results[(size, swaptime)] = []
         heur_results[(size, swaptime)] = []
-        for i, instance in enumerate(gen_instances(size, seed=420, num_instances=100)):
-            name = f"sz{size}_swt{swaptime}_{i}"
-            print(f"# INSTANCE {name}")
+        for i, instance in enumerate(gen_instances(size, seed=420, num_instances=50)):
+            instance_name = f"sz{size}_swt{swaptime}_{i}"
+            print(f"# INSTANCE {instance_name}")
             problem = RawProblem(
                 [RawGate(f"l{j.pair[0]}", f"l{j.pair[1]}", 1) for j in instance.jobs],
                 [(f"p{a}", f"p{b}") for a, b in instance.hardware_graph.edges],
@@ -72,7 +72,10 @@ for size in [4,5,6,7]:
             depth1, solution = solve(problem, 0 if swaptime == 1 else 1)
             t1 = time.time()
             plot_solution(problem, solution)
-            print(f"SAT solved size{size} swaptime{swaptime}  d={depth1} in {(t1-t0):0.2f}")
+            print(
+                f"SAT solved size{size} swaptime{swaptime}  d={depth1} in {(t1-t0):0.2f}"
+            )
+            print(f"SOLVED {instance_name} sat {depth1} {t1-t0:.2f}")
 
             exact_results[(size, swaptime)].append((depth1, t1 - t0))
             # h_problem = qswap_beam.
@@ -81,10 +84,10 @@ for size in [4,5,6,7]:
             lb_map = {}
 
             for gate in problem.gates:
-                for name in [gate.line1, gate.line2]:
-                    if not name in lb_map:
-                        lb_map[name] = len(lb_list)
-                        lb_list.append(name)
+                for n in [gate.line1, gate.line2]:
+                    if not n in lb_map:
+                        lb_map[n] = len(lb_list)
+                        lb_list.append(n)
 
             pb_list = []
             pb_map = {}
@@ -94,6 +97,13 @@ for size in [4,5,6,7]:
                     if not bit in pb_map:
                         pb_map[bit] = len(pb_list)
                         pb_list.append(bit)
+
+            assert len(lb_list) <= len(pb_list)
+            while len(lb_list) < len(pb_list):
+                n = f"dummy_{len(lb_list)}"
+                lb_map[n] = len(lb_list)
+                lb_list.append(n)
+
 
             h_problem = qswap_beam.Problem(
                 n_logical_bits=len(lb_list),
@@ -117,8 +127,8 @@ for size in [4,5,6,7]:
             print("SOLVING heur")
             t0 = time.time()
             sol = qswap_beam.qswap_beam_solve(h_problem, h_params)
-            depth2 = sol.depth
             t1 = time.time()
+            depth2 = sol.depth
 
             sol = qswaps.Solution(
                 bit_assignment={
@@ -135,13 +145,15 @@ for size in [4,5,6,7]:
             )
 
             plot_solution(problem, sol)
-            print(f"HEUR solved size{size} swaptime{swaptime} d={depth2} in {(t1-t0):0.2f}")
+            print(
+                f"HEUR solved size{size} swaptime{swaptime} d={depth2} in {(t1-t0):0.2f}"
+            )
+            print(f"SOLVED {instance_name} beam {depth2} {t1-t0:.2f}")
 
             heur_results[(size, swaptime)].append((depth2, t1 - t0))
 
             if depth1 != depth2:
-                raise Exception()
-                
+                print(f"MISMATCH {instance_name} {depth1} {depth2}")
 
             # break
 

@@ -54,7 +54,9 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
     assert gate_execution_time >= 0
     assert gate_execution_time <= 1
 
-    assert len(logical_bits) == len(physical_bits)
+    assert len(logical_bits) <= len(physical_bits)
+    while len(logical_bits) < len(physical_bits):
+        logical_bits.add(f"dummy_{len(logical_bits)+1}")
 
     n_states = 0
 

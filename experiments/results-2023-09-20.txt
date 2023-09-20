@@ -1,0 +1,11 @@
+                                                              n_bits=4      n_bits=5       n_bits=6      n_bits=7      n_bits=8
+----------------------------------------------------------  ----------  ------------  -------------  ------------  ------------
+number of instances                                          200        200           200            200             50
+number of instances where heuristic gives optimal solution   200        196           196            179             27
+average optimal depth                                          8.665     10.94         21.36          25.23          37.82
+average heuristic depth                                        8.665     10.975        21.38          25.365         38.78
+average optimal solve time (s)                                 0.0067     0.03985       2.9149        17.9202      1156.37
+average heuristic solve time (s)                               0.00805    0.01          0.1107         0.58755        1.9118
+average absolute gap for non-optimal instances                 0          1.75          1              1.28571        2.08696
+average absolute gap                                           0          0.035         0.02           0.135          0.96
+average relative gap                                           0          0.00306061    0.000976299    0.00534557     0.0242118
