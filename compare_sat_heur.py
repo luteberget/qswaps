@@ -1,58 +1,23 @@
+import dataclasses
 import qswaps
 from qswaps import RawProblem, RawGate, solve
 from plot import plot_solution
 from gen_problems import gen_instances
 import qswap_beam
 import time
-
-example1 = RawProblem(
-    gates=[
-        RawGate("l1", "l2", 1),
-        RawGate("l3", "l4", 1),
-        RawGate("l1", "l3", 1),
-        RawGate("l2", "l4", 1),
-    ],
-    topology=[("p1", "p2"), ("p2", "p3"), ("p3", "p4")],
-    swap_time=3,
-)
-
-example2 = "1-(2,4)-3, 2-(3,1)-3, 3-(3,4)-3, 4-(2,1)-3, 5-(2,4)-3, 6-(1,3)-3, 7-(3,2)-3, 8-(4,1)-3"
-# example2 = "1-(2,4)-3, 2-(3,1)-3, 3-(3,4)-3, 4-(2,1)-3"
-# print([parts for g in example2.split(", ") for parts in g.split("-")])
-
-example2 = RawProblem(
-    gates=[
-        RawGate(
-            line1="l" + g.split("-")[1][1:].split(",")[0],
-            line2="l" + g.split("-")[1][:-1].split(",")[1],
-            duration=1,
-        )
-        for g in example2.split(", ")
-    ],
-    topology=[("p1", "p2"), ("p2", "p3"), ("p3", "p4")],
-    swap_time=3,
-)
+import json
 
 exact_results = {}
 heur_results = {}
 
-# p1 = RawProblem(
-#     gates=[
-#         RawGate(line1="l5", line2="l3", duration=1),
-#         RawGate(line1="l2", line2="l1", duration=1),
-#         RawGate(line1="l3", line2="l2", duration=1),
-#         RawGate(line1="l4", line2="l1", duration=1),
-#         RawGate(line1="l4", line2="l2", duration=1),
-#         RawGate(line1="l1", line2="l5", duration=1),
-#     ],
-#     topology=[("p1", "p2"), ("p2", "p3"), ("p3", "p4"), ("p4", "p5")],
-#     swap_time=3,
-# )
-# solve(p1, 1)
-# raise Exception()
+#
+# Solve bit routing on quantum volume circuits with these approaches:
+#  1. A SAT-based solver, solving min-depth exactly for a model where all gates take the 
+#     same (integer) amount of time, and all swaps take another integer amount of time.
+#  2. A beam-search solver, solving the same problem heuristically.
+#
 
-
-for size in [4,5,6,7]:
+for size in [4, 5, 6, 7]:
     for swaptime in [3]:
         exact_results[(size, swaptime)] = []
         heur_results[(size, swaptime)] = []
@@ -69,12 +34,10 @@ for size in [4,5,6,7]:
 
             print("solving...")
             t0 = time.time()
-            depth1, solution = solve(problem, 0 if swaptime == 1 else 1)
+            depth1, sat_solution = solve(problem, 0 if swaptime == 1 else 1)
             t1 = time.time()
-            plot_solution(problem, solution)
-            print(
-                f"SAT solved size{size} swaptime{swaptime}  d={depth1} in {(t1-t0):0.2f}"
-            )
+            print(plot_solution(problem, sat_solution))
+            print(f"SAT solved size{size} swaptime{swaptime}  d={depth1} in {(t1-t0):0.2f}")
             print(f"SOLVED {instance_name} sat {depth1} {t1-t0:.2f}")
 
             exact_results[(size, swaptime)].append((depth1, t1 - t0))
@@ -104,15 +67,12 @@ for size in [4,5,6,7]:
                 lb_map[n] = len(lb_list)
                 lb_list.append(n)
 
-
             h_problem = qswap_beam.Problem(
                 n_logical_bits=len(lb_list),
                 n_physical_bits=len(pb_list),
                 gate_dt=0 if swaptime == 1 else 1,
                 swap_dt=swaptime,
-                gates=[
-                    (lb_map[gate.line1], lb_map[gate.line2]) for gate in problem.gates
-                ],
+                gates=[(lb_map[gate.line1], lb_map[gate.line2]) for gate in problem.gates],
                 topology=[(pb_map[a], pb_map[b]) for a, b in problem.topology],
             )
 
@@ -126,36 +86,30 @@ for size in [4,5,6,7]:
 
             print("SOLVING heur")
             t0 = time.time()
-            sol = qswap_beam.qswap_beam_solve(h_problem, h_params)
+            heur_solution = qswap_beam.qswap_beam_solve(h_problem, h_params)
             t1 = time.time()
-            depth2 = sol.depth
+            depth2 = heur_solution.depth
 
-            sol = qswaps.Solution(
-                bit_assignment={
-                    pb_list[pb]: lb_list[lb] for pb, lb in enumerate(sol.input_bits)
-                },
+            heur_solution = qswaps.Solution(
+                bit_assignment={pb_list[pb]: lb_list[lb] for pb, lb in enumerate(heur_solution.input_bits)},
                 operations=[
                     qswaps.Operation(
                         0,
                         None if g.gate == -1 else g.gate,
                         (pb_list[g.edge[0]], pb_list[g.edge[1]]),
                     )
-                    for g in sol.gates
+                    for g in heur_solution.gates
                 ],
             )
 
-            plot_solution(problem, sol)
-            print(
-                f"HEUR solved size{size} swaptime{swaptime} d={depth2} in {(t1-t0):0.2f}"
-            )
+            print(plot_solution(problem, heur_solution))
+            print(f"HEUR solved size{size} swaptime{swaptime} d={depth2} in {(t1-t0):0.2f}")
             print(f"SOLVED {instance_name} beam {depth2} {t1-t0:.2f}")
 
             heur_results[(size, swaptime)].append((depth2, t1 - t0))
 
             if depth1 != depth2:
                 print(f"MISMATCH {instance_name} {depth1} {depth2}")
-
-            # break
 
 print("exact:", exact_results)
 print("heur: ", heur_results)

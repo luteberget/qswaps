@@ -8,8 +8,10 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict
 from pysat.formula import IDPool
 from pysat.solvers import Cadical153
+from dataclasses_json import dataclass_json
 
 
+@dataclass_json
 @dataclass
 class RawGate:
     line1: str
@@ -17,6 +19,7 @@ class RawGate:
     duration: int
 
 
+@dataclass_json
 @dataclass
 class RawProblem:
     gates: List[RawGate]
@@ -24,6 +27,7 @@ class RawProblem:
     swap_time: int
 
 
+@dataclass_json
 @dataclass
 class Operation:
     time: int
@@ -31,13 +35,56 @@ class Operation:
     edge: Tuple[str, str]
 
 
+@dataclass_json
 @dataclass
 class Solution:
     bit_assignment: Dict[str, str]
     operations: List[Operation]
 
+def toposort_layers(problem :RawProblem) -> List[List[int]]:
+    logical_bits = set(bit for g in problem.gates for bit in [g.line1, g.line2])
+    incoming_edges = [[] for _ in problem.gates]
+    outgoing_edges = [[] for _ in problem.gates]
+    lb_output_gate = { l :None for l in logical_bits }
 
-def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
+    for gate_idx, gate in enumerate(problem.gates):
+        for prev_input in [gate.line1, gate.line2]:
+            if lb_output_gate[prev_input] is not None:
+                incoming_edges[gate_idx].append(lb_output_gate[prev_input])
+                outgoing_edges[lb_output_gate[prev_input]].append(gate_idx)
+            
+            lb_output_gate[prev_input] = gate_idx
+
+    added_nodes = 0
+    result = [[]]
+
+    # First layer
+    current_layer = []
+    for gate_idx, incoming in enumerate(incoming_edges):
+        if len(incoming) == 0:
+            current_layer.append(gate_idx)
+
+    next_layer = []
+    while added_nodes < len(problem.gates):
+        for gate_idx in current_layer:
+            added_nodes += 1
+            result[-1].append(gate_idx)
+
+            for other_gate in outgoing_edges[gate_idx]:
+                incoming_edges[other_gate].remove(gate_idx)
+                if len(incoming_edges[other_gate]) == 0:
+                    next_layer.append(other_gate)
+
+        result.append([])
+        current_layer = next_layer
+        next_layer = []
+
+    if added_nodes > 0:
+        result.pop()
+
+    return result
+
+def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :bool = False) -> Solution:
     vpool = IDPool()
     solver = Cadical153()
 
@@ -59,6 +106,12 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
         logical_bits.add(f"dummy_{len(logical_bits)+1}")
 
     n_states = 0
+
+    gate_topo_layers = None
+    if use_fixed_layers:
+        gate_topo_layers = toposort_layers(raw_problem)
+
+    print("TOPO SORT", gate_topo_layers)
 
     def add_state():
         nonlocal n_states
@@ -182,6 +235,12 @@ def solve(raw_problem: RawProblem, gate_execution_time: int) -> Solution:
             # If executing the gate, it has to be executed at one of the possible physical locations
             # print("gate ", gate_idx, "locations", locations)
             solver.add_clause([-execute] + locations)
+
+
+        if use_fixed_layers:
+            for layer in gate_topo_layers:
+                for gate1,gate2 in zip(layer, layer[1:] + [layer[0]]):
+                    solver.add_clause([-vpool.id(f"t{t}_g{gate1}!"), vpool.id(f"t{t}_g{gate2}!")])
 
         #
         # SWAPS:

@@ -24,6 +24,6 @@ def plot_solution(problem :RawProblem, solution :Solution):
         else:
             circuit.swap(*[node_to_q[n] for n in op.edge])
 
-    txt = circuit_drawer(circuit, vertical_compression="low", idle_wires=True)
-    print(txt)
+    txt = str(circuit_drawer(circuit, vertical_compression="low", idle_wires=True))
+    return txt
 
