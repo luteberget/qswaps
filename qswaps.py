@@ -317,6 +317,8 @@ def solve_sat(
         status = solver.solve([vpool.id(v) for v in all_gates_executed])
         # print(f"done status={status}")
 
+        last_t = n_states - 1
+
         if status:
             model = set(solver.get_model())
 
@@ -342,7 +344,7 @@ def solve_sat(
                                 print(f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})")
                                 operations.append(Operation(t, gate_idx, e))
 
-                if (n_states-t) >= raw_problem.swap_time:
+                if (last_t - t) >= raw_problem.swap_time:
                     for e in raw_problem.topology:
                         if vpool.id(f"t{t}_sw({e[0]},{e[1]})") in model:
                             operations.append(Operation(t, None, e))
