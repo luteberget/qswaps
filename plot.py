@@ -1,13 +1,12 @@
 from qiskit.circuit import Gate
-from problem import verify_solution_bit_dependencies
-from qswaps import RawProblem, Solution
+from problem import RawProblem, Solution
 from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister
 from qiskit.quantum_info.operators import Operator, Pauli
 from qiskit.visualization import circuit_drawer
 
 
 def to_qiskit_circuit(problem: RawProblem, solution: Solution, include_bit_assignment: bool = False):
-    assert verify_solution_bit_dependencies(problem, solution) is None
+
 
     order = sorted(list(set(x for a, b in problem.topology for x in [a, b])))
 

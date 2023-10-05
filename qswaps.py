@@ -9,6 +9,7 @@ from typing import List, Tuple, Optional, Dict
 from pysat.formula import IDPool
 from pysat.solvers import Cadical153
 from dataclasses_json import dataclass_json
+from postprocess import remove_unnecessary_swaps
 
 from problem import *
 
@@ -60,8 +61,12 @@ def toposort_layers(problem: RawProblem) -> List[List[int]]:
 def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers: bool = False) -> Tuple[int, Solution]:
     n, sol = solve_sat(raw_problem, gate_execution_time, use_fixed_layers)
 
+    n_ops_raw = len(sol.operations)
     # Postprocess
     sol = remove_unnecessary_swaps(raw_problem, sol)
+    n_ops = len(sol.operations)
+
+    print(f"POSTPROCESSING removed {n_ops_raw - n_ops} swaps")
 
     return n, sol
 
@@ -265,14 +270,14 @@ def solve_sat(
 
                 this_swap = vpool.id(f"t{swap_start}_sw({this_edge[0]},{this_edge[1]})")
 
-                # cant undo a swap
-                if swap_start >= 1:
-                    solver.add_clause(
-                        [
-                            -this_swap,
-                            -vpool.id(f"t{swap_start-1}_sw({this_edge[0]},{this_edge[1]})"),
-                        ]
-                    )
+                # # cant undo a swap
+                # if swap_start >= raw_problem.swap_time:
+                #     solver.add_clause(
+                #         [
+                #             -this_swap,
+                #             -vpool.id(f"t{swap_start-raw_problem.swap_time}_sw({this_edge[0]},{this_edge[1]})"),
+                #         ]
+                #     )
 
                 for other_time in range(swap_start, t):
                     for other_edge in adjacent_edges + [this_edge]:

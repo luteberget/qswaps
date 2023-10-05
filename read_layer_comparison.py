@@ -2,6 +2,7 @@ import glob
 import json
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Gate
+from problem import verify_solution_bit_dependencies
 from qswaps import RawProblem, Solution
 from qiskit.visualization import circuit_drawer
 
@@ -37,6 +38,9 @@ for filename in glob.glob("experiments/layers_nonoptimal/*json"):
     problem = RawProblem.from_dict(instance["problem"])
     nonlayered_solution = Solution.from_dict(instance["nonlayered_solution"]["solution"])
     layered_solution = Solution.from_dict(instance["layered_solution"]["solution"])
+
+    assert verify_solution_bit_dependencies(problem, nonlayered_solution) is None
+    assert verify_solution_bit_dependencies(problem, layered_solution) is None
 
     nonlayered_circuit = to_qiskit_circuit(problem, nonlayered_solution)
     layered_circuit = to_qiskit_circuit(problem, layered_solution)

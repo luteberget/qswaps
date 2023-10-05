@@ -1,5 +1,6 @@
 from collections import defaultdict
 import dataclasses
+from problem import verify_solution_bit_dependencies
 import qswaps
 from qswaps import RawProblem, RawGate, solve
 from plot import plot_solution
@@ -25,6 +26,10 @@ for size in [4, 5, 6, 7]:
 
             depth1, sat_solution = solve(problem, 0 if swaptime == 1 else 1)
             depth2, sat_layers_solution = solve(problem, 0 if swaptime == 1 else 1, use_fixed_layers=True)
+
+
+            assert verify_solution_bit_dependencies(problem, sat_solution) is None
+            assert verify_solution_bit_dependencies(problem, sat_layers_solution) is None
 
             def as_dict(sol):
                 return {"solution": sol.to_dict(), "plot": plot_solution(problem, sol)}
