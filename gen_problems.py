@@ -40,6 +40,7 @@ class Problem:
 
 def qc_to_jobs(qc):
     dag = circuit_to_dag(qc)
+    
     two_q_list=dag.collect_2q_runs()
     list_of_jobs = []
     for i, gates in enumerate(two_q_list):

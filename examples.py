@@ -1,4 +1,4 @@
-from qswaps import RawProblem, RawGate
+from problem import RawProblem, RawGate
 
 example1 = RawProblem(
     gates=[

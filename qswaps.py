@@ -10,49 +10,21 @@ from pysat.formula import IDPool
 from pysat.solvers import Cadical153
 from dataclasses_json import dataclass_json
 
-
-@dataclass_json
-@dataclass
-class RawGate:
-    line1: str
-    line2: str
-    duration: int
+from problem import *
 
 
-@dataclass_json
-@dataclass
-class RawProblem:
-    gates: List[RawGate]
-    topology: List[Tuple[str, str]]
-    swap_time: int
-
-
-@dataclass_json
-@dataclass
-class Operation:
-    time: int
-    gate: Optional[int]
-    edge: Tuple[str, str]
-
-
-@dataclass_json
-@dataclass
-class Solution:
-    bit_assignment: Dict[str, str]
-    operations: List[Operation]
-
-def toposort_layers(problem :RawProblem) -> List[List[int]]:
+def toposort_layers(problem: RawProblem) -> List[List[int]]:
     logical_bits = set(bit for g in problem.gates for bit in [g.line1, g.line2])
     incoming_edges = [[] for _ in problem.gates]
     outgoing_edges = [[] for _ in problem.gates]
-    lb_output_gate = { l :None for l in logical_bits }
+    lb_output_gate = {l: None for l in logical_bits}
 
     for gate_idx, gate in enumerate(problem.gates):
         for prev_input in [gate.line1, gate.line2]:
             if lb_output_gate[prev_input] is not None:
                 incoming_edges[gate_idx].append(lb_output_gate[prev_input])
                 outgoing_edges[lb_output_gate[prev_input]].append(gate_idx)
-            
+
             lb_output_gate[prev_input] = gate_idx
 
     added_nodes = 0
@@ -84,7 +56,19 @@ def toposort_layers(problem :RawProblem) -> List[List[int]]:
 
     return result
 
-def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :bool = False) -> Solution:
+
+def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers: bool = False) -> Tuple[int, Solution]:
+    n, sol = solve_sat(raw_problem, gate_execution_time, use_fixed_layers)
+
+    # Postprocess
+    sol = remove_unnecessary_swaps(raw_problem, sol)
+
+    return n, sol
+
+
+def solve_sat(
+    raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers: bool = False
+) -> Tuple[int, Solution]:
     vpool = IDPool()
     solver = Cadical153()
 
@@ -142,21 +126,12 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
             lb = next(iter(logical_bits))
             pb_edge = [bit for a, b in raw_problem.topology for bit in [a, b]]
             print(pb_edge)
-            extreme_pb = next(
-                pb
-                for pb in physical_bits
-                if len([True for b in pb_edge if pb == b]) == 1
-            )
+            extreme_pb = next(pb for pb in physical_bits if len([True for b in pb_edge if pb == b]) == 1)
             half_of_pbs = set([extreme_pb])
 
             while len(half_of_pbs) < len(physical_bits) // 2:
                 half_of_pbs.update(
-                    [
-                        b
-                        for x, y in raw_problem.topology
-                        for a, b in [(x, y), (y, x)]
-                        if a in half_of_pbs
-                    ]
+                    [b for x, y in raw_problem.topology for a, b in [(x, y), (y, x)] if a in half_of_pbs]
                 )
 
             for pb in half_of_pbs:
@@ -187,13 +162,9 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
             pred_b = None
             for gate_j in reversed(range(0, gate_idx)):
                 other_gate = raw_problem.gates[gate_j]
-                if (
-                    other_gate.line1 == gate.line1 or other_gate.line2 == gate.line1
-                ) and pred_a == None:
+                if (other_gate.line1 == gate.line1 or other_gate.line2 == gate.line1) and pred_a == None:
                     pred_a = gate_j
-                if (
-                    other_gate.line1 == gate.line2 or other_gate.line2 == gate.line2
-                ) and pred_b == None:
+                if (other_gate.line1 == gate.line2 or other_gate.line2 == gate.line2) and pred_b == None:
                     pred_b = gate_j
 
             # The gate's predecessors have already been executed
@@ -205,9 +176,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
                     # print("cannot execute", f"t{t}_g{gate_idx}!")
                     solver.add_clause([-execute])
                 else:
-                    solver.add_clause(
-                        [-execute, vpool.id(f"t{t-gate_execution_time}_g{pred}")]
-                    )
+                    solver.add_clause([-execute, vpool.id(f"t{t-gate_execution_time}_g{pred}")])
 
             locations = []
 
@@ -236,10 +205,9 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
             # print("gate ", gate_idx, "locations", locations)
             solver.add_clause([-execute] + locations)
 
-
         if use_fixed_layers:
             for layer in gate_topo_layers:
-                for gate1,gate2 in zip(layer, layer[1:] + [layer[0]]):
+                for gate1, gate2 in zip(layer, layer[1:] + [layer[0]]):
                     solver.add_clause([-vpool.id(f"t{t}_g{gate1}!"), vpool.id(f"t{t}_g{gate2}!")])
 
         #
@@ -252,9 +220,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
             for pb in physical_bits:
                 # possible swaps involving this bit
                 adjacent_edges = {
-                    pb1 if pb == pb2 else pb2: (pb1, pb2)
-                    for pb1, pb2 in raw_problem.topology
-                    if pb1 == pb or pb2 == pb
+                    pb1 if pb == pb2 else pb2: (pb1, pb2) for pb1, pb2 in raw_problem.topology if pb1 == pb or pb2 == pb
                 }
 
                 for other_pb in (b for b in physical_bits if b != pb):
@@ -294,8 +260,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
                 adjacent_edges = [
                     other_edge
                     for other_edge in raw_problem.topology
-                    if other_edge != this_edge
-                    and len(set(other_edge).intersection(set(this_edge))) > 0
+                    if other_edge != this_edge and len(set(other_edge).intersection(set(this_edge))) > 0
                 ]
 
                 this_swap = vpool.id(f"t{swap_start}_sw({this_edge[0]},{this_edge[1]})")
@@ -305,9 +270,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
                     solver.add_clause(
                         [
                             -this_swap,
-                            -vpool.id(
-                                f"t{swap_start-1}_sw({this_edge[0]},{this_edge[1]})"
-                            ),
+                            -vpool.id(f"t{swap_start-1}_sw({this_edge[0]},{this_edge[1]})"),
                         ]
                     )
 
@@ -318,9 +281,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
 
                         if gate_execution_time == 1:
                             for gate_idx, _gate in enumerate(raw_problem.gates):
-                                other_gate = vpool.id(
-                                    f"t{other_time}_g{gate_idx}@({other_edge[0]},{other_edge[1]})!"
-                                )
+                                other_gate = vpool.id(f"t{other_time}_g{gate_idx}@({other_edge[0]},{other_edge[1]})!")
 
                                 solver.add_clause([-this_swap, -other_gate])
 
@@ -328,9 +289,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
 
                         #
                         # Swap incompatibility
-                        other_swap = vpool.id(
-                            f"t{other_time}_sw({other_edge[0]},{other_edge[1]})"
-                        )
+                        other_swap = vpool.id(f"t{other_time}_sw({other_edge[0]},{other_edge[1]})")
 
                         if this_swap != other_swap:
                             solver.add_clause([-this_swap, -other_swap])
@@ -346,9 +305,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
         print(f"solving with {n_states} states...")
 
         t = n_states - 1
-        all_gates_executed = [
-            f"t{t}_g{gate_idx}" for gate_idx, _ in enumerate(raw_problem.gates)
-        ]
+        all_gates_executed = [f"t{t}_g{gate_idx}" for gate_idx, _ in enumerate(raw_problem.gates)]
 
         # for i, v in vpool.id2obj.items():
         #     print("var ", i, ". ", v)
@@ -382,9 +339,7 @@ def solve(raw_problem: RawProblem, gate_execution_time: int, use_fixed_layers :b
                     if vpool.id(f"t{t}_g{gate_idx}!") in model:
                         for e in raw_problem.topology:
                             if vpool.id(f"t{t}_g{gate_idx}@({e[0]},{e[1]})!") in model:
-                                print(
-                                    f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})"
-                                )
+                                print(f"  g{gate_idx+1} ({gate.line1},{gate.line2}) at ({e[0]},{e[1]})")
                                 operations.append(Operation(t, gate_idx, e))
 
                 if (n_states-t) >= raw_problem.swap_time:
