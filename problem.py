@@ -44,9 +44,6 @@ def verify_solution_bit_dependencies(problem: RawProblem, solution: Solution) ->
             assert len(correct_input_bits) == 2
             if current_assignment_input_bits != correct_input_bits:
                 msg = f"Input bits for gate {op.gate}:{problem.gates[op.gate]} do not match {current_assignment_input_bits}"
-                print(problem)
-                print(solution)
-                print(msg)
                 return msg
         else:
             a, b = op.edge

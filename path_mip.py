@@ -34,8 +34,15 @@ def solve_full_pathmip(
     print(f"Logical bits {logical_bits}")
     print(f"Physical bits {physical_bits}")
 
-    for n_steps in range(1, max_depth + 1):
-        model = grb.Model()
+    env = grb.Env("gurobi.log")
+    env.setParam("MIPFocus",1)
+    #env.setParam("NoRelHeurWork", 120)
+    env.setParam("Cuts",0)
+    env.setParam("CutPasses", 1)
+
+    # We will be cheating a bit here and set the depth to the known minimum.
+    for n_steps in range(max_depth, max_depth + 1):
+        model = grb.Model(env=env)
 
         constraints = {}
 
@@ -208,7 +215,8 @@ def solve_full_pathmip(
 
             column.reverse()
 
-            print(f"Path for {path_lb} uses {column}")
+            if len(paths) % 10000 == 0:
+                print(f"Path for {path_lb} uses {column}")
 
             var = model.addVar(
                 obj=0.0,
@@ -223,7 +231,8 @@ def solve_full_pathmip(
             paths.append((var, PathData(path_lb, path_initial_pb, path_gates)))
 
         print(f"Generated MIP with depth {n_steps} and {len(paths)} paths.")
-        model.write("test.lp")
+        model.write("problem.lp")
+        model.write("problem.mps")
         model.optimize()
 
         if model.status == grb.GRB.INFEASIBLE:
@@ -289,8 +298,8 @@ def solve_full_pathmip(
 
 if __name__ == "__main__":
     swaptime = 3
-    for size in [4]:
-        for i, instance in enumerate(gen_instances(size, seed=420, num_instances=50)):
+    for size in [5]:
+        for i, instance in enumerate(gen_instances(size, seed=421, num_instances=50)):
             instance_name = f"sz{size}_swt{swaptime}_{i}"
             print(f"# INSTANCE {instance_name}")
 
@@ -299,6 +308,8 @@ if __name__ == "__main__":
                 [(f"p{a}", f"p{b}") for a, b in instance.hardware_graph.edges],
                 swaptime,
             )
+
+            problem.gates = problem.gates[:2*len(problem.gates)//3]
 
             depth, sat_solution = solve_sat(problem, 0 if swaptime == 1 else 1)
             print(plot_solution(problem, sat_solution))
@@ -310,5 +321,7 @@ if __name__ == "__main__":
             )
             t1 = time.time()
             print(plot_solution(problem, sol2))
+
+            assert depth == depth2
 
             print(f"Solved {instance_name} in {t1-t0:.2f}s.")
