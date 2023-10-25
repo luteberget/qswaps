@@ -22,7 +22,7 @@ fn qswap_beam(_py: Python, m: &PyModule) -> PyResult<()> {
 }
 
 #[pyclass]
-
+#[derive(Debug)]
 pub struct Problem {
     #[pyo3(get, set)]
     pub n_logical_bits: usize,
